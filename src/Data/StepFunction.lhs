@@ -6,6 +6,7 @@
 > {-# LANGUAGE ScopedTypeVariables #-}
 > module Data.StepFunction where
 > import qualified Data.Map.Strict as DMS
+> import Control.Applicative
 > import Control.Lens.Indexed
 > import Control.Lens
 > import Data.Maybe
@@ -46,6 +47,10 @@ StepFunction
 > instance (Ord k, Arbitrary k, Arbitrary a) => Arbitrary (SF k a) where
 >   arbitrary = SF <$> arbitrary <*> arbitrary
 >   shrink = genericShrink
+
+> instance (Monoid a, Ord k) => Monoid (SF k a) where
+>   mempty = pure mempty
+>   mappend = liftA2 mappend
 
 > type instance Index (SF k a) = k
 > type instance IxValue (SF k a) = a
