@@ -53,6 +53,8 @@ StepFunction
 >   ix k f m = f (fn m k) <&> \v' -> insert k v' m
 >   {-# INLINE ix #-}
 
+> instance (CoArbitrary k, CoArbitrary a) => CoArbitrary (SF k a)
+
 > data Bounds k = Lo | Val (IE k) | Hi
 > type Interval k = (Bounds k, Bounds k)
 
@@ -121,21 +123,31 @@ Lookup just before, at, and after:
 Todo: make nicer, perhaps?
 
 > instance (Ord k) => Monad (SF k) where
->   SF a aM >>= f =
->     let restrict ((lo, SF b bM):rest@((hi,_):ys)) =
->           let (_, between) = DMS.split lo bM
->               (between', _) = DMS.split hi between
->               at = maybe b snd . DMS.lookupLE lo $ bM
->           in DMS.insert lo at between' : restrict rest
->         restrict ((lo, SF b bM):[]) =
->           let (_, between) = DMS.split lo bM
->               at = maybe b snd . DMS.lookupLE lo $ bM
->           in DMS.insert lo at between : []
->         restrict [] = []
->     in let SF b bM = f a
->            hi = fmap (fst . fst) . DMS.minViewWithKey $ aM
->            below = maybe id (fst .: DMS.split) hi bM
->     in SF b . DMS.unions . (below:) . restrict . (fmap.fmap) f . DMS.toAscList $ aM
+>   s@(SF a aM) >>= f =
+>     let SF (SF b bM1) bM = fmap (uncurry restrict) $ giveBounds (fmap f s)
+>         unSF (SF _ x) = x
+>     in SF b $ DMS.unions (bM1 : fmap unSF (DMS.elems bM))
+
+> restrict :: Ord k => Interval k -> SF k a -> SF k a
+> restrict (lo, hi) = onlyAfter lo . onlyBefore hi
+
+> break :: Ord k => Bounds k -> SF k a -> (SF k a, SF k a)
+> break k s = (onlyBefore k s, onlyAfter k s)
+> onlyBefore, onlyAfter :: Ord k => Bounds k -> SF k a -> SF k a
+
+> onlyAfter Lo s = s
+> onlyAfter (Val lo) (SF a aM) =
+>   let (_, after) = DMS.split lo aM
+>       at = maybe a snd . DMS.lookupLE lo $ aM
+>   in SF at (DMS.insert lo at after)
+> onlyAfter Hi (SF a aM) =
+>   SF `flip` DMS.empty $ maybe a fst $ DMS.maxView aM
+
+> onlyBefore Lo (SF a aM) = SF a DMS.empty
+> onlyBefore (Val hi) (SF a aM) =
+>   let (lower, _) = DMS.split hi aM
+>   in SF a lower
+> onlyBefore Hi s = s
 
 > giveBounds :: forall k a . Ord k => SF k a -> SF k (Interval k, a)
 > giveBounds (SF a aM) =
