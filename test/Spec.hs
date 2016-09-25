@@ -40,8 +40,33 @@ prop_onlyBefore cut m =
 
 prop_break :: Bounds Int -> SF Int Int -> Property
 prop_break cut m =
-  let (SF lo _, SF hi atEnd) = S.break cut m
-  in m === (SF (DMS.union lo hi) atEnd)
+  let (lo, hi) = S.break cut m
+  in counterexample ("lo: " ++ show lo)
+  $ counterexample  ("hi: " ++ show hi)
+  $ smooth m === smooth (fuse lo hi)
+
+prop_break1 :: Bounds Int -> SF Int Int -> Property
+prop_break1 cut@(Val k) m = let (lo, hi) = S.break cut m
+  in breaks m === breaks lo ++ breaks hi
+  .&. breaks m === breaks lo ++ [k] ++ breaks hi
+
+prop_break1 cut m =
+  let (lo, hi) = S.break cut m
+  in breaks m === breaks lo ++ breaks hi
+
+prop_break2 :: Int -> Bounds Int -> SF Int Int -> SF Int Int -> Property
+prop_break2 q cut m n =
+  let (lo, _) = S.break cut m
+      (_, hi) = S.break cut m
+      both = fuse lo hi
+  in counterexample ("lo: " ++ show lo)
+  $  counterexample ("hi: " ++ show hi)
+  $  counterexample ("fuse: " ++ show both)
+  $ fn both q === case compare (Val (q, True)) cut of
+    LT -> fn m q
+    EQ -> fn m q
+    GT -> fn n q
+
 
 -- One of them also needs to forget the proper at.
 

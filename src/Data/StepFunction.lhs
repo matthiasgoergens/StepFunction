@@ -16,24 +16,36 @@
 > import Data.Bool
 
 
-Monoid Action: similar to group acting on set.
+Talk about Twisted Functors:
+  Monoid Action: similar to group acting on set.
 
-instance Monoid (m -> a -> a) where
-  mempty = const id
-  mappend m n = m . n
+  instance Monoid (m -> a -> a) where
+    mempty = const id
+    mappend m n = m . n
 
-Look at semi-direct products for monoids acting on monoids.
+  Look at semi-direct products for monoids acting on monoids.
 
-Eg Offset Monoid acting on pointers or numbers.
+  Eg Offset Monoid acting on pointers or numbers.
 
-type Offset = Sum Int
+  type Offset = Sum Int
 
-Obvious generalization: look at semiring actions in Haskell. (eg regular expressions)
+  Obvious generalization: look at semiring actions in Haskell. (eg regular expressions)
 
-Applicative=Monoidal functors are parameterized monoids!  (I saw that earlier at Google.)
+  Applicative=Monoidal functors are parameterized monoids!  (I saw that earlier at Google.)
 
-Twisted-functor: semi-direct product for functors (=applicative functors)
+  Twisted-functor: semi-direct product for functors (=applicative functors)
+  Tensors were also mentioned.
+TODO: put to proper resting place.
 
+Module for stepfunctions.
+
+Guiding principles
+  like in Python's range function, intervals are half-open,
+  [lo,hi) == {x | lo <= x < hi} that means half-open.
+
+  'fn' turns step functions into proper Haskell functions.
+  instances should commute with 'fn' where possible.  Ie type class instances
+  are in analogue to the Reader Monad.
 
 Inclusion / Exclusion
 
@@ -66,6 +78,8 @@ StepFunction
 
 > instance Arbitrary k => Arbitrary (Bounds k) where
 >   arbitrary = oneof [pure Lo, Val <$> arbitrary, pure Hi]
+>   shrink = genericShrink
+> instance CoArbitrary k => CoArbitrary (Bounds k)
 
 > instance Ord k => TraversableWithIndex (Interval k) (SF k) where
 >   itraverse f = traverse (uncurry f) . giveBounds
@@ -170,7 +184,7 @@ Todo: make nicer, perhaps?
 > onlyBefore (Val hi) (SF aM atEnd) =
 >   let (lower, _) = DMS.split hi aM
 >       at = maybe atEnd snd . DMS.lookupGE hi $ aM
->   in SF (DMS.insert hi at lower) atEnd
+>   in SF lower atEnd
 > onlyBefore Hi s = s
 
 > lastDef :: a -> [a] -> a
@@ -191,3 +205,16 @@ This could be done better, staying in trees (Data.Map.Strict.Map) not going via 
 >       aM' :: DMS.Map (IE k) (Interval k, a)
 >       aM' = DMS.fromAscList $ zipWith3 aug (Lo : map Val breaks) breaks vs
 >   in SF aM' atEnd'
+
+> smooth :: (Ord k, Eq a) => SF k a -> SF k a
+> smooth (SF m a) =
+>   let kas = DMS.toAscList m
+>       out (k, a) a' | a == a' = Nothing
+>                     | otherwise = Just (k, a)
+>   in SF (DMS.fromAscList . catMaybes $ zipWith out kas (map snd (drop 1 kas) ++ [a])) a
+
+> fuse :: Ord k => SF k a -> SF k a -> SF k a
+> fuse (SF lo _) (SF hi atEnd) = SF (DMS.union lo hi) atEnd
+
+> breaks :: Ord k => SF k a -> [IE k]
+> breaks (SF aM _) = DMS.keys aM
