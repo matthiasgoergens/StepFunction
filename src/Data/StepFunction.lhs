@@ -15,28 +15,6 @@
 > import Prelude hiding (lookup)
 > import Data.Bool
 
-
-Talk about Twisted Functors:
-  Monoid Action: similar to group acting on set.
-
-  instance Monoid (m -> a -> a) where
-    mempty = const id
-    mappend m n = m . n
-
-  Look at semi-direct products for monoids acting on monoids.
-
-  Eg Offset Monoid acting on pointers or numbers.
-
-  type Offset = Sum Int
-
-  Obvious generalization: look at semiring actions in Haskell. (eg regular expressions)
-
-  Applicative=Monoidal functors are parameterized monoids!  (I saw that earlier at Google.)
-
-  Twisted-functor: semi-direct product for functors (=applicative functors)
-  Tensors were also mentioned.
-TODO: put to proper resting place.
-
 Module for stepfunctions.
 
 Guiding principles
