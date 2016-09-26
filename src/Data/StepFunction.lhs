@@ -6,10 +6,12 @@
 > {-# LANGUAGE ScopedTypeVariables #-}
 > {-# LANGUAGE TypeOperators #-}
 > {-# LANGUAGE PostfixOperators #-}
+> {-# LANGUAGE TupleSections #-}
 > module Data.StepFunction where
 > import qualified Data.Map.Strict as DMS
 > import Control.Applicative
 > import Control.Lens.Indexed
+> import Control.Monad.State.Strict
 > import Control.Lens
 > import Data.Maybe
 > import GHC.Generics
@@ -27,7 +29,11 @@ Guiding principles
   instances should commute with 'fn' where possible.  Ie type class instances
   are in analogue to the Reader Monad.
 
-By default we can only represent half open [) intervals, non-standard analysis
+Lookup is via set operations on left-open half-lines:
+
+{ x :: k | x < jump}
+
+By default that only represent half open [) intervals, non-standard analysis
 (or Dedekind cuts) inspire a trick: we extent our keys with an optional 'plus
 epsilon'.  Thus:
 
@@ -61,7 +67,9 @@ Same as normal +
 > instance CoArbitrary k => CoArbitrary (PlusEpsilon k)
 
 Step function from k to a.  Same associativity and precedence as normal
-function arrow.
+function arrow.  Finite number of jumps.  (Haskell could support an infinite
+number of jumps, but we are using Data.Map.Strict for the underlying
+representation.)
 
 > data (:->) k a = SF (DMS.Map (PlusEpsilon k) a) a
 >   deriving (Eq, Ord, Functor, Generic, Show, Traversable, Foldable)
@@ -93,10 +101,15 @@ function arrow.
 >   shrink = genericShrink
 > instance CoArbitrary k => CoArbitrary (Bounds k)
 
-> instance Ord k => TraversableWithIndex (Interval k) ((:->) k) where
->   itraverse f = traverse (uncurry f) . giveBounds
-> instance Ord k => FoldableWithIndex (Interval k) ((:->) k)
-> instance Ord k => FunctorWithIndex (Interval k) ((:->) k)
+TODO: properties for itraverse?
+
+ instance Ord k => TraversableWithIndex (Interval k) ((:->) k) where
+   itraverse f = traverse (uncurry f) . giveBounds
+
+ instance Ord k => FoldableWithIndex (Interval k) ((:->) k)
+ instance Ord k => FunctorWithIndex (Interval k) ((:->) k)
+
+TODO: add these:
 
  instance Ord k => At (k :-> a) where
    at k f m = f mv <&> \r -> case r of
@@ -109,37 +122,25 @@ function arrow.
   ix e p f = p (f e) <&> \a e' -> if e == e' then a else f e'
   {-# INLINE ix #-}
 
-> instance Ord k => At (k :-> a) where
->   at = undefined
+ instance Ord k => At (k :-> a) where
+   at = undefined
 
 > insert :: Ord k => k -> a -> (k :-> a) -> (k :-> a)
 > insert k a s@(SF am atEnd) =
 >   let (_, at, after) = lookup3 k s
 >   in SF (DMS.insert (k :+! Zero) a . DMS.insert (k :+! Eps) after $ am) atEnd
 
-
-k + ?epsilon
-
-lookup k == x:
-
-
-k <= x + epsilon <= k + epsilon
-
-x <  k + ?epsilon
-
-k + 0 < x < k + eps # wrong?
-k + 0 < x + eps < k + eps + eps # bad?
-
 > lookup :: Ord k => k -> (k :-> a) -> a
 > lookup k = (\(_,m,_) -> m) . lookup3 k
+> lookup' k (SF map end) = maybe end snd (DMS.lookupGE k map)
 
 Lookup just before, at, and after:
 
 > lookup3 :: Ord k => k -> (k :-> a) -> (a, a, a)
-> lookup3 k (SF am atEnd) =
->   ( maybe atEnd snd (DMS.lookupGE (k :+! Zero) am)
->   , maybe atEnd snd (DMS.lookupGE (k :+! Eps)  am)
->   , maybe atEnd snd (DMS.lookupGT (k :+! Eps)  am))
+> lookup3 k (SF map end) =
+>   ( maybe end snd (DMS.lookupGE (k :+! Zero) map)
+>   , maybe end snd (DMS.lookupGE (k :+! Eps)  map)
+>   , maybe end snd (DMS.lookupGT (k :+! Eps)  map))
 
 > fn :: Ord k => (k :-> a) -> k -> a
 > fn = flip lookup
@@ -153,6 +154,9 @@ Lookup just before, at, and after:
 > interval def lo hi a = SF (DMS.fromList [(lo, def), (hi, a)]) def
 > interval' lo hi = interval False lo hi True
 
+    [lo, hi + Eps)
+=== [lo, hi]
+
 > closedInterval lo hi = interval' (lo :+! Zero) (hi :+! Eps)
 
 > instance (Ord k) => Applicative ((:->) k) where
@@ -161,62 +165,72 @@ Lookup just before, at, and after:
 >     merge [] [] = []
 >     merge [] aM = (fmap.fmap) f aM
 >     merge fM [] = (fmap.fmap) ($ a) fM
+
+This is where the decision to go with left-open half-lines really shines:
+
 >     merge ((fk, f) : fs) ((ak, a) : as) = case compare fk ak of
 >       LT -> (fk, f a) : merge fs             ((ak, a) : as)
 >       EQ -> (fk, f a) : merge fs             as
 >       GT -> (ak, f a) : merge ((fk, f) : fs) as
 
-> (.:) = (.) . (.)
+TODO: take from some common library
 
 Todo: make nicer, perhaps?
 
 > instance (Ord k) => Monad ((:->) k) where
 >   s@(SF aM a) >>= f =
->     let SF bM (SF bM1 b) = fmap (uncurry restrict) $ giveBounds (fmap f s)
->         unSF (SF m _) = m
->     in SF (DMS.unions (bM1 : fmap unSF (DMS.elems bM))) b
+>     let SF bM b = fmap f s
+>     in ifoldr fuse b bM
 
-> restrict :: Ord k => Interval k -> (k :-> a) -> (k :-> a)
-> restrict (lo, hi) = onlyAfter lo . onlyBefore hi
+> giveLowerBound :: (k :-> a) -> k :-> (Maybe (PlusEpsilon k), a)
+> giveLowerBound (SF map end) =
+>   let (map', lastK) = runState (itraverse (\i a -> (,a) <$> swap (Just i)) map) Nothing
+>       end' = (lastK, end)
+>   in SF map' end'
 
-> break :: Ord k => Bounds k -> (k :-> a) -> (k :-> a, k :-> a)
-> break k s = (onlyBefore k s, onlyAfter k s)
-> onlyBefore, onlyAfter :: Ord k => Bounds k -> (k :-> a) -> (k :-> a)
+> swap a = get <* put a
 
-> onlyAfter Lo s = s
-> onlyAfter (Val lo) s@(SF aM atEnd) =
->   let (_, after) = DMS.split lo aM
->       at = maybe atEnd snd . DMS.lookupGE lo $ aM
->   in SF (DMS.insert lo at after) atEnd
-> onlyAfter Hi (SF aM a) =
->   SF DMS.empty a
+free applicative?
 
-> onlyBefore Lo (SF aM atEnd) =
->   SF DMS.empty $ maybe atEnd fst $ DMS.minView aM
-> onlyBefore (Val hi) (SF aM atEnd) =
->   let (lower, _) = DMS.split hi aM
->       at = maybe atEnd snd . DMS.lookupGE hi $ aM
->   in SF lower atEnd
-> onlyBefore Hi s = s
+> (.:) = (.) . (.)
 
-> lastDef :: a -> [a] -> a
-> lastDef def xs = foldr cons id xs def where
->   nil = id
->   cons x rest def = rest x
+ restrictAll :: forall k a . Ord k => (k :-> (k :-> a)) -> k :-> k :-> a
+ restrictAll sf =
+   let SF map end = fmap (\(lo, a) -> maybe id onlyAfter lo a) $ giveLowerBound sf
+   in SF (imap onlyBefore map) end
+
+ break :: Ord k => PlusEpsilon k -> (k :-> a) -> (k :-> a, k :-> a)
+ break k s = (onlyBefore k s, onlyAfter k s)
+ onlyBefore, onlyAfter :: Ord k => PlusEpsilon k -> (k :-> a) -> (k :-> a)
+
+ onlyAfter lo s@(SF aM atEnd) =
+   let (_, after) = DMS.split lo aM
+       at = lookup' lo s
+   in SF (DMS.insert lo at after) atEnd
+
+ onlyBefore hi s@(SF aM _) =
+   let (lower, _) = DMS.split hi aM
+       -- (atEnd, _, _) = lookup3 hi s
+   in SF lower _
+
+ lastDef :: a -> [a] -> a
+ lastDef def xs = foldr cons id xs def where
+   nil = id
+   cons x rest def = rest x
 
 This could be done better, staying in trees (Data.Map.Strict.Map) not going via List.
 
-> giveBounds :: forall k a . Ord k => (k :-> a) -> k :-> (Interval k, a)
-> giveBounds (SF aM atEnd) =
->   let breaks :: [PlusEpsilon k]
->       vs :: [a]
->       (breaks, vs) = unzip $ DMS.toAscList aM
->       aug :: Bounds k -> PlusEpsilon k -> a -> (PlusEpsilon k, (Interval k, a))
->       aug lo hi v = (hi, ((lo, Val hi), v))
->       atEnd' = ((lastDef Lo $ map Val breaks, Hi), atEnd)
->       aM' :: DMS.Map (PlusEpsilon k) (Interval k, a)
->       aM' = DMS.fromAscList $ zipWith3 aug (Lo : map Val breaks) breaks vs
->   in SF aM' atEnd'
+ giveBounds :: forall k a . Ord k => (k :-> a) -> k :-> (Interval k, a)
+ giveBounds (SF aM atEnd) =
+   let breaks :: [PlusEpsilon k]
+       vs :: [a]
+       (breaks, vs) = unzip $ DMS.toAscList aM
+       aug :: Bounds k -> PlusEpsilon k -> a -> (PlusEpsilon k, (Interval k, a))
+       aug lo hi v = (hi, ((lo, Val hi), v))
+       atEnd' = ((lastDef Lo $ map Val breaks, Hi), atEnd)
+       aM' :: DMS.Map (PlusEpsilon k) (Interval k, a)
+       aM' = DMS.fromAscList $ zipWith3 aug (Lo : map Val breaks) breaks vs
+   in SF aM' atEnd'
 
 > smooth :: (Ord k, Eq a) => (k :-> a) -> (k :-> a)
 > smooth (SF m a) =
@@ -225,8 +239,12 @@ This could be done better, staying in trees (Data.Map.Strict.Map) not going via 
 >                     | otherwise = Just (k, a)
 >   in SF (DMS.fromAscList . catMaybes $ zipWith out kas (map snd (drop 1 kas) ++ [a])) a
 
-> fuse :: Ord k => (k :-> a) -> (k :-> a) -> (k :-> a)
-> fuse (SF lo _) (SF hi atEnd) = SF (DMS.union lo hi) atEnd
+> fuse :: Ord k => PlusEpsilon k -> (k :-> a) -> (k :-> a) -> (k :-> a)
+> fuse k s@(SF lo _) (SF hi atEnd) =
+>   let (lo', _) = DMS.split k lo
+>       (_, hi') = DMS.split k hi
+>       at       = lookup' k s
+>   in SF (DMS.union lo' (DMS.insert k at hi')) atEnd
 
 > breaks :: Ord k => (k :-> a) -> [PlusEpsilon k]
 > breaks (SF aM _) = DMS.keys aM

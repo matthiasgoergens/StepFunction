@@ -22,63 +22,63 @@ prop_join k m =
    in counterexample (show m')
    $ g' k === g k
 
-prop_join2 :: (Int :-> Int) -> Property
-prop_join2 m =
-  counterexample (show $ giveBounds m)
-  $ counterexample (show . toList $ giveBounds m)
-  $ m === (join . fmap pure) m
+-- prop_join2 :: (Int :-> Int) -> Property
+-- prop_join2 m =
+--   counterexample (show $ giveBounds m)
+--   $ counterexample (show . toList $ giveBounds m)
+--   $ m === (join . fmap pure) m
 
-prop_onlyAfter :: Int -> (Int :-> Int) -> Property
-prop_onlyAfter cut m =
-  let (before, at, after) = lookup3 cut (onlyAfter (Val (cut :+! Eps)) m)
-  in before === at -- forgot the proper before.
+-- prop_onlyAfter :: Int -> (Int :-> Int) -> Property
+-- prop_onlyAfter cut m =
+--   let (before, at, after) = lookup3 cut (onlyAfter (Val (cut :+! Eps)) m)
+--   in before === at -- forgot the proper before.
 
-prop_onlyBefore :: Int -> (Int :-> Int) -> Property
-prop_onlyBefore cut m =
-  let oA = (onlyAfter (Val (cut :+! Eps)) m)
-      (before, at, after) = lookup3 cut oA
-  in counterexample (show oA)
-  $ at === after -- forgot the proper after.
+-- prop_onlyBefore :: Int -> (Int :-> Int) -> Property
+-- prop_onlyBefore cut m =
+--   let oA = (onlyAfter (Val (cut :+! Eps)) m)
+--       (before, at, after) = lookup3 cut oA
+--   in counterexample (show oA)
+--   $ at === after -- forgot the proper after.
 
-prop_break :: Bounds Int -> (Int :-> Int) -> Property
-prop_break cut m =
-  let (lo, hi) = S.break cut m
-  in counterexample ("lo: " ++ show lo)
-  $ counterexample  ("hi: " ++ show hi)
-  $ smooth m === smooth (fuse lo hi)
+-- prop_break :: Bounds Int -> (Int :-> Int) -> Property
+-- prop_break cut m =
+--   let (lo, hi) = S.break cut m
+--   in counterexample ("lo: " ++ show lo)
+--   $ counterexample  ("hi: " ++ show hi)
+--   $ smooth m === smooth (fuse lo hi)
 
-prop_break1 :: Bounds Int -> (Int :-> Int) -> Property
-prop_break1 cut@(Val k) m = let (lo, hi) = S.break cut m
-  in breaks m === breaks lo ++ breaks hi
-  .&. breaks m === breaks lo ++ [k] ++ breaks hi
-
-prop_break1 cut m =
-  let (lo, hi) = S.break cut m
-  in breaks m === breaks lo ++ breaks hi
-
-prop_break2 :: Int -> Bounds Int -> (Int :-> Int) -> (Int :-> Int) -> Property
-prop_break2 q cut m n =
-  let (lo, _) = S.break cut m
-      (_, hi) = S.break cut m
-      both = fuse lo hi
-  in counterexample ("lo: " ++ show lo)
-  $  counterexample ("hi: " ++ show hi)
-  $  counterexample ("fuse: " ++ show both)
-  $ fn both q === case compare (Val (q :+! Eps)) cut of
-    LT -> fn m q
-    EQ -> fn m q
-    GT -> fn n q
+-- prop_break1 :: Bounds Int -> (Int :-> Int) -> Property
+-- prop_break1 cut@(Val k) m = let (lo, hi) = S.break cut m
+--   in breaks m === breaks lo ++ breaks hi
+--   .&. breaks m === breaks lo ++ [k] ++ breaks hi
+-- 
+-- prop_break1 cut m =
+--   let (lo, hi) = S.break cut m
+--   in breaks m === breaks lo ++ breaks hi
+-- 
+-- prop_break2 :: Int -> Bounds Int -> (Int :-> Int) -> (Int :-> Int) -> Property
+-- prop_break2 q cut m n =
+--   let (lo, _) = S.break cut m
+--       (_, hi) = S.break cut m
+--       both = fuse lo hi
+--   in counterexample ("lo: " ++ show lo)
+--   $  counterexample ("hi: " ++ show hi)
+--   $  counterexample ("fuse: " ++ show both)
+--   $ fn both q === case compare (Val (q :+! Eps)) cut of
+--     LT -> fn m q
+--     EQ -> fn m q
+--     GT -> fn n q
 
 
 -- One of them also needs to forget the proper at.
 
-prop_giveBounds :: Int -> Int -> Property
-prop_giveBounds lo hi =
-  lo < hi ==>
-  let i = map fst . toList . giveBounds $ closedInterval lo hi
-      lo' = Val (lo :+! Zero)
-      hi' = Val (hi :+! Eps)
-  in [(Lo, lo'), (lo', hi'), (hi', Hi)] === i
+-- prop_giveBounds :: Int -> Int -> Property
+-- prop_giveBounds lo hi =
+--   lo < hi ==>
+--   let i = map fst . toList . giveBounds $ closedInterval lo hi
+--       lo' = Val (lo :+! Zero)
+--       hi' = Val (hi :+! Eps)
+--   in [(Lo, lo'), (lo', hi'), (hi', Hi)] === i
 
 prop_singleton :: Int -> Int -> Property
 prop_singleton q k =
